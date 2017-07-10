@@ -21,8 +21,9 @@ var signalingStates = [
   'stable'
 ];
 
-var isFirefox = typeof mozRTCPeerConnection !== 'undefined';
-var isChrome = !isFirefox;
+const isFirefox = typeof mozRTCPeerConnection !== 'undefined';
+const isChrome = !isFirefox;
+const isSafari = navigator.userAgent.match(/Version\/(\d+).(\d+)/);
 
 describe('RTCPeerConnection', function() {
   this.timeout(30000);
@@ -63,6 +64,7 @@ describe('RTCPeerConnection', function() {
     });
   });
 
+  // TODO(mroberts): Add SSRC fix to Safari
   describe('#createOffer, called twice from signaling state "stable" without calling #setLocalDescription', () => {
     let offer1;
     let offer2;
@@ -92,6 +94,7 @@ describe('RTCPeerConnection', function() {
     });
   });
 
+  // TODO(mroberts): Rollback...
   describe('#setLocalDescription, called from signaling state', () => {
     signalingStates.forEach(signalingState => {
       context(JSON.stringify(signalingState) + ' with a description of type', () => {
@@ -100,6 +103,8 @@ describe('RTCPeerConnection', function() {
     });
   });
 
+  // TODO(mroberts): Rollback...
+  // TODO(mroberts): offerToReceiveAudio/offerToReceiveVideo...
   describe('#setRemoteDescription, called from signaling state', () => {
     signalingStates.forEach(signalingState => {
       context(JSON.stringify(signalingState) + ' with a description of type', () => {
@@ -136,7 +141,7 @@ describe('RTCPeerConnection', function() {
     //   the right thing to do (especially when we go to Unified Plan SDP) but it's
     //   the way it's worked for a while.
     //
-    (isFirefox
+    (isFirefox || isSafari
       ? it
       : it.skip
     )('should create a single MediaStreamTrack for each MediaStreamTrack ID in the SDP, regardless of SSRC changes', async () => {
@@ -164,10 +169,12 @@ describe('RTCPeerConnection', function() {
     testDtlsRoleNegotiation();
   });
 
+  // NOTE(mroberts): Rollback...
   describe('Glare', () => {
     testGlare();
   });
 
+  // NOTE(mroberts): https://bugs.webkit.org/show_bug.cgi?id=174327
   describe('"track" event', () => {
     context('when a new MediaStreamTrack is added', () => {
       it('should trigger a "track" event on the remote RTCPeerConnection with the added MediaStreamTrack', async () => {
@@ -200,9 +207,13 @@ describe('RTCPeerConnection', function() {
 
         const [localVideoTrack] = (await makeStream({ video: true, fake: true })).getVideoTracks();
 
-        pc1.removeStream(stream);
-        stream.addTrack(localVideoTrack);
-        pc1.addStream(stream);
+        if (isSafari) {
+          pc1.addTrack(localVideoTrack, stream);
+        } else {
+          pc1.removeStream(stream);
+          stream.addTrack(localVideoTrack);
+          pc1.addStream(stream);
+        }
         const trackEvent2 = waitForEvent(pc2, 'track');
 
         const offer2 = await pc1.createOffer();
@@ -293,8 +304,8 @@ function testAddIceCandidate(signalingState) {
   // such that remoteDescription was non-null, we would accept a success here.
   var shouldFail = {
     closed: true,
-    stable: true,
-    'have-local-offer': true
+    stable: !isSafari,
+    'have-local-offer': !isSafari
   }[signalingState] || false;
 
   var needsTransition = {
@@ -302,7 +313,8 @@ function testAddIceCandidate(signalingState) {
     'have-remote-offer': true
   }[signalingState] || false;
 
-  context(JSON.stringify(signalingState), () => {
+  (signalingState === 'closed' && isSafari ? context.skip : context)
+  (JSON.stringify(signalingState), () => {
     var error;
     var result;
     var test;
@@ -372,7 +384,7 @@ function testGetLocalStreams(signalingState) {
       // we test this API the way we do.
       it('should return an array of MediaStreams containing the ' +
          'MediaStreamTracks added to the underlying RTCPeerConnection', () => {
-        if (isFirefox) {
+        if (isFirefox || isSafari) {
           return;
         }
         assert.deepEqual(test.peerConnection.getLocalStreams(), test.peerConnection._peerConnection.getLocalStreams());
@@ -400,7 +412,7 @@ function testGetRemoteStreams(signalingState) {
       // we test this API the way we do.
       it('should return an array of MediaStreams containing the ' +
          'MediaStreamTracks received on the underlying RTCPeerConnection', () => {
-        if (isFirefox) {
+        if (isFirefox || isSafari) {
           return;
         }
         assert.deepEqual(test.peerConnection.getRemoteStreams(), test.peerConnection._peerConnection.getRemoteStreams());
@@ -1159,7 +1171,7 @@ c=IN IP4 127.0.0.1\r
   var setup;
   switch (test.signalingState) {
     case 'closed':
-      setup = test.close().then(test.resetEvents);
+      setup = test.close().then(() => test.resetEvents());
       break;
     case 'stable':
       setup = Promise.resolve(test);
