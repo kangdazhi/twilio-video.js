@@ -21,9 +21,9 @@ var signalingStates = [
   'stable'
 ];
 
+const isChrome = typeof webkitRTCPeerConnection !== 'undefined';
 const isFirefox = typeof mozRTCPeerConnection !== 'undefined';
-const isChrome = !isFirefox;
-const isSafari = navigator.userAgent.match(/Version\/(\d+).(\d+)/);
+const isSafari = !isChrome && !isFirefox && navigator.userAgent.match(/AppleWebKit\/(\d+)\./);
 
 describe('RTCPeerConnection', function() {
   this.timeout(30000);
@@ -64,7 +64,6 @@ describe('RTCPeerConnection', function() {
     });
   });
 
-  // TODO(mroberts): Add SSRC fix to Safari
   describe('#createOffer, called twice from signaling state "stable" without calling #setLocalDescription', () => {
     let offer1;
     let offer2;
@@ -94,7 +93,6 @@ describe('RTCPeerConnection', function() {
     });
   });
 
-  // TODO(mroberts): Rollback...
   describe('#setLocalDescription, called from signaling state', () => {
     signalingStates.forEach(signalingState => {
       context(JSON.stringify(signalingState) + ' with a description of type', () => {
@@ -103,8 +101,6 @@ describe('RTCPeerConnection', function() {
     });
   });
 
-  // TODO(mroberts): Rollback...
-  // TODO(mroberts): offerToReceiveAudio/offerToReceiveVideo...
   describe('#setRemoteDescription, called from signaling state', () => {
     signalingStates.forEach(signalingState => {
       context(JSON.stringify(signalingState) + ' with a description of type', () => {
@@ -169,12 +165,10 @@ describe('RTCPeerConnection', function() {
     testDtlsRoleNegotiation();
   });
 
-  // NOTE(mroberts): Rollback...
   describe('Glare', () => {
     testGlare();
   });
 
-  // NOTE(mroberts): https://bugs.webkit.org/show_bug.cgi?id=174327
   describe('"track" event', () => {
     context('when a new MediaStreamTrack is added', () => {
       it('should trigger a "track" event on the remote RTCPeerConnection with the added MediaStreamTrack', async () => {
@@ -207,6 +201,7 @@ describe('RTCPeerConnection', function() {
 
         const [localVideoTrack] = (await makeStream({ video: true, fake: true })).getVideoTracks();
 
+        // NOTE(mroberts): https://bugs.webkit.org/show_bug.cgi?id=174327
         if (isSafari) {
           pc1.addTrack(localVideoTrack, stream);
         } else {
